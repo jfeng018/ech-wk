@@ -168,7 +168,9 @@ class ConfigManager:
             'ip': 'saas.sin.fan',
             'dns': 'dns.alidns.com/dns-query',
             'ech': 'cloudflare-ech.com',
-            'routing_mode': 'bypass_cn'  # 默认跳过中国大陆
+            'routing_mode': 'bypass_cn',  # 默认跳过中国大陆
+            'username': '',  # 本地代理认证用户名（可选，留空则不启用认证）
+            'password': '',  # 本地代理认证密码（可选）
         }
         self.servers.append(default_server)
         self.current_server_id = default_server['id']
@@ -243,6 +245,11 @@ class ProcessThread(QThread):
             cmd.extend(['-dns', self.config['dns']])
         if self.config.get('ech') and self.config['ech'] != 'cloudflare-ech.com':
             cmd.extend(['-ech', self.config['ech']])
+        # 本地代理认证（用户名/密码，留空则不启用）
+        if self.config.get('username'):
+            cmd.extend(['-username', self.config['username']])
+        if self.config.get('password'):
+            cmd.extend(['-password', self.config['password']])
         # 添加分流模式参数
         routing_mode = self.config.get('routing_mode', 'bypass_cn')
         if routing_mode:
@@ -516,6 +523,16 @@ class MainWindow(QMainWindow):
         self.token_edit.setPlaceholderText("身份验证令牌（可选）")
         self.token_edit.setEchoMode(QLineEdit.Password)
         advanced_layout.addWidget(self.create_label_edit("身份令牌:", self.token_edit))
+        auth_row = QHBoxLayout()
+        auth_row.setSpacing(10)
+        self.proxy_user_edit = QLineEdit()
+        self.proxy_user_edit.setPlaceholderText("代理用户名（可选）")
+        auth_row.addWidget(self.create_label_edit("认证用户名:", self.proxy_user_edit))
+        self.proxy_pass_edit = QLineEdit()
+        self.proxy_pass_edit.setPlaceholderText("代理密码（可选）")
+        self.proxy_pass_edit.setEchoMode(QLineEdit.Password)
+        auth_row.addWidget(self.create_label_edit("认证密码:", self.proxy_pass_edit))
+        advanced_layout.addLayout(auth_row)
         row1 = QHBoxLayout()
         row1.setSpacing(10)
         self.ip_edit = QLineEdit()
@@ -1199,6 +1216,8 @@ class MainWindow(QMainWindow):
             self.ip_edit.setText(server.get('ip', ''))
             self.dns_edit.setText(server.get('dns', ''))
             self.ech_edit.setText(server.get('ech', ''))
+            self.proxy_user_edit.setText(server.get('username', ''))
+            self.proxy_pass_edit.setText(server.get('password', ''))
             # 加载分流模式
             routing_mode = server.get('routing_mode', 'bypass_cn')
             for i in range(self.routing_combo.count()):
@@ -1272,6 +1291,8 @@ class MainWindow(QMainWindow):
         server['ip'] = self.ip_edit.text()
         server['dns'] = self.dns_edit.text()
         server['ech'] = self.ech_edit.text()
+        server['username'] = self.proxy_user_edit.text()
+        server['password'] = self.proxy_pass_edit.text()
         
         # 保存分流模式
         routing_mode = self.routing_combo.currentData()
@@ -1312,6 +1333,8 @@ class MainWindow(QMainWindow):
                     current_server['ip'] = self.ip_edit.text()
                     current_server['dns'] = self.dns_edit.text()
                     current_server['ech'] = self.ech_edit.text()
+                    current_server['username'] = self.proxy_user_edit.text()
+                    current_server['password'] = self.proxy_pass_edit.text()
                     # 保存分流模式
                     routing_mode = self.routing_combo.currentData()
                     if routing_mode:
@@ -1685,6 +1708,10 @@ class MainWindow(QMainWindow):
                 self.system_proxy_enabled = True
                 self.proxy_btn.setText("关闭系统代理")
                 self.append_log("[系统] 已设置系统代理\n")
+                # 若配置了代理认证，系统代理无法自动携带凭据，提醒用户手动配置
+                if self.proxy_user_edit.text():
+                    self.append_log("[系统] 提示: 已启用代理认证，系统代理无法自动携带用户名/密码，\n")
+                    self.append_log("[系统] 请在浏览器/应用的代理设置中手动填写认证用户名和密码。\n")
             else:
                 QMessageBox.warning(self, "错误", "设置系统代理失败")
     
