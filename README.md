@@ -152,6 +152,9 @@ ech-workers [选项]
 | `-ip` | 空 | 指定服务端 IP（绕过 DNS） | `-ip 1.2.3.4` |
 | `-dns` | `dns.alidns.com/dns-query` | ECH 查询 DoH 服务器 | `-dns dns.alidns.com/dns-query` |
 | `-ech` | `cloudflare-ech.com` | ECH 查询域名 | `-ech cloudflare-ech.com` |
+| `-username` | 空 | 本地代理认证用户名（设置后启用认证） | `-username myuser` |
+| `-password` | 空 | 本地代理认证密码 | `-password mypass` |
+| `-tproxy` | 空 | TPROXY 透明代理监听地址（仅 Linux） | `-tproxy 0.0.0.0:12581` |
 | `-routing` | `global` | 分流模式 | `-routing bypass_cn` |
 
 #### 分流模式说明
@@ -298,6 +301,19 @@ Start-Process -FilePath "ech-workers.exe" `
 - **代理类型**: SOCKS5
 - **端口**: 30001（或你指定的端口）
 
+#### 启用账号密码认证
+
+设置了 `-username`（及可选 `-password`）后，本地代理会要求用户名/密码认证（SOCKS5 使用 RFC 1929 用户名/密码方法，HTTP 使用 `Proxy-Authorization: Basic`）。未设置时行为不变，无需认证。
+
+- **curl (SOCKS5)**: `curl --socks5 用户名:密码@127.0.0.1:30001 https://www.google.com`
+- **curl (HTTP)**: `curl -x http://用户名:密码@127.0.0.1:30001 https://www.google.com`
+- **浏览器**: 在系统/浏览器代理设置中填写用户名和密码。
+- **GUI**: 在服务器配置的「高级选项」中填写「认证用户名 / 认证密码」并保存。
+- **路由器 GUI (LuCI)**: 在 **服务 → Tuple ECH Worker → 高级设置** 中填写「代理认证用户名 / 代理认证密码」并保存。
+
+> **注意**: 启用认证后，OS 系统代理无法自动携带凭据，需在浏览器/应用代理设置中手动填写用户名和密码。
+
+
 #### 浏览器配置
 
 **Chrome/Edge:**
@@ -380,8 +396,25 @@ $env:HTTPS_PROXY="socks5://127.0.0.1:30001"
 勾选"开机启动"复选框，程序会在系统启动时自动运行并启动代理。
 
 ## 🛣️ 软路由部署
-### 图形化推荐
-https://github.com/SunshineList/luci-app-ech-workers
+
+### 图形化推荐（仓库内置 LuCI 应用）
+
+本仓库已内置 OpenWrt LuCI 图形界面应用 `luci-app-ech-workers/`（源自 [SunshineList/luci-app-ech-workers](https://github.com/SunshineList/luci-app-ech-workers)），支持 TPROXY 透明代理与账号密码认证：
+
+1. **编译安装 ipk**（需要 OpenWrt SDK / 已配置 LuCI feed）：
+   ```bash
+   # 在 OpenWrt SDK 目录
+   cp -r luci-app-ech-workers package/
+   ./scripts/feeds update -i
+   make package/luci-app-ech-workers/compile V=s
+   # 生成的 ipk 位于 bin/packages/.../
+   scp bin/packages/*/luci-app-ech-workers_*.ipk root@192.168.1.1:/tmp/
+   ssh root@192.168.1.1 "opkg install /tmp/luci-app-ech-workers_*.ipk"
+   ```
+2. **首次安装自动下载二进制**：安装后访问 **服务 → Tuple ECH Worker**，`uci-defaults` 会自动从本仓库 Release 下载对应架构的 `ech-workers`（amd64/arm64/armv7/armv6/mips/mipsle 软路由版）到 `/usr/bin/ech-workers`。
+
+> **注意**: 如果自动下载失败（如路由器无法访问 GitHub），可手动下载对应架构的 `ECHWorkers-linux-*-softrouter.tar.gz`，解压出 `ech-workers` 放到 `/usr/bin/ech-workers` 并 `chmod +x`。
+
 ### OpenWrt 部署
 ### 一键脚本
 ```bash
@@ -716,7 +749,12 @@ ECH 是 TLS 1.3 的扩展功能，用于加密 TLS 握手中的 SNI（服务器�
 
 ## 🤝 致谢
 
-本项目的客户端和 Go 核心程序均基于 [CF_NAT](https://t.me/CF_NAT) 的原始代码开发。
+本项目由以下项目发展而来，感谢原作者的出色工作：
+
+- **ECH Workers 客户端 / Go 核心**: 基于 [byJoey/ech-wk](https://github.com/byJoey/ech-wk)（其又基于 [CF_NAT](https://t.me/CF_NAT) 的原始代码开发）
+- **OpenWrt LuCI 图形界面**: 内置的 `luci-app-ech-workers/` 基于 [SunshineList/luci-app-ech-workers](https://github.com/SunshineList/luci-app-ech-workers)
+
+相关资源：
 
 - **原始项目来源**: [CF_NAT - 中转](https://t.me/CF_NAT)
 - **Telegram 频道**: [@CF_NAT](https://t.me/CF_NAT)
