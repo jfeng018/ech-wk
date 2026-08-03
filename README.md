@@ -522,7 +522,9 @@ chmod +x /etc/init.d/ech-workers.sh
 /etc/init.d/ech-workers.sh
 ```
 ### Docker部署
-   
+
+多架构镜像（amd64/arm64）随 Release 自动构建推送至 **GHCR**（`ghcr.io/<账号>/ech-wk:latest`）。如无本仓库镜像，也可使用 `cirnosalt/ech-workers-docker`。
+
 参数说明：
 
 ```
@@ -530,9 +532,13 @@ chmod +x /etc/init.d/ech-workers.sh
   -e ARG_F="" #填写你的workers域名和端口 
   -e ARG_ECH="cloudflare-ech.com" #ech查询域名，一般保持默认 
   -e ARG_TOKEN="" #你设置的token
-  -e ARG_IP="visa.com" #优选IP或域名
+  -e ARG_USERNAME="" #本地代理认证用户名（可选，设置后启用认证）
+  -e ARG_PASSWORD="" #本地代理认证密码（可选）
+  -e ARG_IP="" #优选IP或域名
   -e ARG_L="0.0.0.0:30000" #Socks5服务器的IP和端口，0.0.0.0为全局监听
+  -e ARG_DNS="dns.alidns.com/dns-query" #DoH服务器
   -e ARG_ROUTING="global" #分流模式，global=全局代理 bypass_cn=绕过大陆
+  -e ARG_TPROXY="" #TPROXY透明代理监听地址（可选，仅Linux）
 ```
 
 docker运行命令模板，按照上面的说明填写，然后复制到终端运行：
@@ -545,10 +551,12 @@ docker run -d \
   -e ARG_F="" \
   -e ARG_ECH="cloudflare-ech.com" \
   -e ARG_TOKEN="" \
+  -e ARG_USERNAME="" \
+  -e ARG_PASSWORD="" \
   -e ARG_IP="visa.com" \
   -e ARG_L="0.0.0.0:30000" \
   -e ARG_ROUTING="global" \
-  cirnosalt/ech-workers-docker:latest
+  ghcr.io/jfeng018/ech-wk:latest
 ```
    
 ### 软路由配置建议
