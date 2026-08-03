@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -19,9 +20,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/gorilla/websocket"
 )
@@ -36,6 +40,13 @@ var (
 	dnsServer   string
 	echDomain   string
 	routingMode string // 分流模式: "global", "bypass_cn", "none"
+
+	// 本地代理认证（可选用用户名/密码）
+	authUsername string
+	authPassword string
+
+	// TPROXY 透明代理监听地址（仅 Linux）
+	tproxyAddr string
 
 	echListMu sync.RWMutex
 	echList   []byte
@@ -69,6 +80,9 @@ func init() {
 	flag.StringVar(&dnsServer, "dns", "dns.alidns.com/dns-query", "ECH 查询 DoH 服务器")
 	flag.StringVar(&echDomain, "ech", "cloudflare-ech.com", "ECH 查询域名")
 	flag.StringVar(&routingMode, "routing", "global", "分流模式: global(全局代理), bypass_cn(跳过中国大陆), none(不改变代理)")
+	flag.StringVar(&authUsername, "username", "", "本地代理认证用户名（可选，设置了则启用认证）")
+	flag.StringVar(&authPassword, "password", "", "本地代理认证密码（可选）")
+	flag.StringVar(&tproxyAddr, "tproxy", "", "TPROXY 透明代理监听地址 (仅 Linux，如 0.0.0.0:12581)")
 }
 
 func main() {
@@ -117,6 +131,11 @@ func main() {
 	} else {
 		log.Printf("[警告] 未知的分流模式: %s，使用默认模式 global", routingMode)
 		routingMode = "global"
+	}
+
+	// 如果指定了 TPROXY 地址，同时启动透明代理
+	if tproxyAddr != "" {
+		go runTProxyServer(tproxyAddr)
 	}
 
 	runProxyServer(listenAddr)
@@ -862,6 +881,55 @@ func dialWebSocketWithECH(maxRetries int) (*websocket.Conn, error) {
 
 // ======================== 统一代理服务器 ========================
 
+// authEnabled 返回是否启用了本地代理认证（设置了用户名即启用）
+func authEnabled() bool {
+	return authUsername != ""
+}
+
+// validCredentials 校验用户名/密码（常量时间比较，避免时序侧信道）
+func validCredentials(user, pass string) bool {
+	if !authEnabled() {
+		return true
+	}
+	if subtle.ConstantTimeCompare([]byte(user), []byte(authUsername)) != 1 {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(pass), []byte(authPassword)) == 1
+}
+
+// validHTTPProxyAuth 校验 HTTP Proxy-Authorization: Basic 头。
+// 未启用认证时恒返回 true；否则校验通过返回 true，失败写入 407 并返回 false。
+func validHTTPProxyAuth(conn net.Conn, headerValue string) bool {
+	if !authEnabled() {
+		return true
+	}
+
+	// 解析 "Basic <base64(user:pass)>"
+	scheme, credB64, found := strings.Cut(strings.TrimSpace(headerValue), " ")
+	if !found || !strings.EqualFold(scheme, "Basic") {
+		conn.Write([]byte("HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"ech-workers\"\r\n\r\n"))
+		return false
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(credB64)
+	if err != nil {
+		conn.Write([]byte("HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"ech-workers\"\r\n\r\n"))
+		return false
+	}
+
+	user, pass, found := strings.Cut(string(decoded), ":")
+	if !found {
+		conn.Write([]byte("HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"ech-workers\"\r\n\r\n"))
+		return false
+	}
+
+	if !validCredentials(user, pass) {
+		conn.Write([]byte("HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"ech-workers\"\r\n\r\n"))
+		return false
+	}
+	return true
+}
+
 func runProxyServer(addr string) {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -935,9 +1003,55 @@ func handleSOCKS5(conn net.Conn, clientAddr string, firstByte byte) {
 		return
 	}
 
-	// 响应无需认证
-	if _, err := conn.Write([]byte{0x05, 0x00}); err != nil {
-		return
+	// 已启用认证：协商 RFC 1929 用户名/密码方法（0x02）
+	if authEnabled() {
+		supportsAuth := false
+		for _, m := range methods {
+			if m == 0x02 {
+				supportsAuth = true
+				break
+			}
+		}
+		if !supportsAuth {
+			// 无可接受的方法
+			conn.Write([]byte{0x05, 0xFF})
+			return
+		}
+		conn.Write([]byte{0x05, 0x02})
+
+		// RFC 1929: VER(1) ULEN(1) UNAME(ULEN) PLEN(1) PASSWD(PLEN)
+		authBuf := make([]byte, 2)
+		if _, err := io.ReadFull(conn, authBuf); err != nil {
+			return
+		}
+		if authBuf[0] != 0x01 {
+			return
+		}
+		ulen := int(authBuf[1])
+		uname := make([]byte, ulen)
+		if _, err := io.ReadFull(conn, uname); err != nil {
+			return
+		}
+		plenBuf := make([]byte, 1)
+		if _, err := io.ReadFull(conn, plenBuf); err != nil {
+			return
+		}
+		plen := int(plenBuf[0])
+		passwd := make([]byte, plen)
+		if _, err := io.ReadFull(conn, passwd); err != nil {
+			return
+		}
+
+		if !validCredentials(string(uname), string(passwd)) {
+			conn.Write([]byte{0x01, 0x01}) // 认证失败
+			return
+		}
+		conn.Write([]byte{0x01, 0x00}) // 认证成功
+	} else {
+		// 响应无需认证
+		if _, err := conn.Write([]byte{0x05, 0x00}); err != nil {
+			return
+		}
 	}
 
 	// 读取请求
@@ -1218,6 +1332,11 @@ func handleHTTP(conn net.Conn, clientAddr string, firstByte byte) {
 		}
 	}
 
+	// HTTP 代理认证（Proxy-Authorization: Basic）
+	if !validHTTPProxyAuth(conn, headers["proxy-authorization"]) {
+		return
+	}
+
 	switch method {
 	case "CONNECT":
 		// HTTPS 隧道代理 - 需要发送 200 响应
@@ -1311,6 +1430,7 @@ const (
 	modeSOCKS5      = 1 // SOCKS5 代理
 	modeHTTPConnect = 2 // HTTP CONNECT 隧道
 	modeHTTPProxy   = 3 // HTTP 普通代理（GET/POST等）
+	modeTProxy      = 4 // TPROXY 透明代理
 )
 
 func handleTunnel(conn net.Conn, target, clientAddr string, mode int, firstFrame string) error {
@@ -1537,6 +1657,108 @@ func sendSuccessResponse(conn net.Conn, mode int) error {
 	case modeHTTPProxy:
 		// HTTP GET/POST 等不需要发送响应，直接转发目标服务器的响应
 		return nil
+	case modeTProxy:
+		// TPROXY 透明代理不需要发送响应
+		return nil
 	}
 	return nil
+}
+
+// ======================== TPROXY 透明代理支持 ========================
+
+// SO_ORIGINAL_DST 常量 (Linux)
+const SO_ORIGINAL_DST = 80
+
+// getOriginalDst 从 socket 获取原始目标地址（仅 Linux）
+func getOriginalDst(conn net.Conn) (string, error) {
+	if runtime.GOOS != "linux" {
+		return "", fmt.Errorf("TPROXY 仅支持 Linux 平台")
+	}
+
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		return "", fmt.Errorf("not a TCP connection")
+	}
+
+	file, err := tcpConn.File()
+	if err != nil {
+		return "", fmt.Errorf("get file descriptor failed: %v", err)
+	}
+	defer file.Close()
+
+	fd := int(file.Fd())
+
+	// 使用 getsockopt 获取原始目标地址
+	var addr syscall.RawSockaddrInet4
+	size := uint32(syscall.SizeofSockaddrInet4)
+
+	_, _, errno := syscall.Syscall6(
+		syscall.SYS_GETSOCKOPT,
+		uintptr(fd),
+		uintptr(syscall.IPPROTO_IP),
+		uintptr(SO_ORIGINAL_DST),
+		uintptr(unsafe.Pointer(&addr)),
+		uintptr(unsafe.Pointer(&size)),
+		0,
+	)
+
+	if errno != 0 {
+		return "", fmt.Errorf("getsockopt SO_ORIGINAL_DST failed: %v", errno)
+	}
+
+	// 解析 IP 和端口
+	ip := net.IPv4(addr.Addr[0], addr.Addr[1], addr.Addr[2], addr.Addr[3])
+	// 端口是网络字节序（大端）
+	port := int(addr.Port&0xff)<<8 + int(addr.Port>>8)
+
+	return fmt.Sprintf("%s:%d", ip.String(), port), nil
+}
+
+// runTProxyServer 启动 TPROXY 透明代理服务器
+func runTProxyServer(addr string) {
+	if runtime.GOOS != "linux" {
+		log.Printf("[TPROXY] 透明代理仅支持 Linux 平台，当前系统: %s", runtime.GOOS)
+		return
+	}
+
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("[TPROXY] 监听失败: %v", err)
+	}
+	defer listener.Close()
+
+	log.Printf("[TPROXY] 透明代理服务器启动: %s", addr)
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Printf("[TPROXY] 接受连接失败: %v", err)
+			continue
+		}
+
+		go handleTProxyConnection(conn)
+	}
+}
+
+// handleTProxyConnection 处理 TPROXY 连接
+func handleTProxyConnection(conn net.Conn) {
+	defer conn.Close()
+
+	clientAddr := conn.RemoteAddr().String()
+
+	// 获取原始目标地址
+	target, err := getOriginalDst(conn)
+	if err != nil {
+		log.Printf("[TPROXY] %s 获取原始目标地址失败: %v", clientAddr, err)
+		return
+	}
+
+	log.Printf("[TPROXY] %s -> %s", clientAddr, target)
+
+	// 使用现有的隧道处理逻辑
+	if err := handleTunnel(conn, target, clientAddr, modeTProxy, ""); err != nil {
+		if !isNormalCloseError(err) {
+			log.Printf("[TPROXY] %s 代理失败: %v", clientAddr, err)
+		}
+	}
 }
