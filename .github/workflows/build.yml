@@ -172,7 +172,7 @@ jobs:
           CGO_ENABLED: ${{ matrix.cgo_enabled }}
         run: |
           echo "Building for $GOOS/$GOARCH (target=${{ matrix.target }}, CGO_ENABLED=$CGO_ENABLED)"
-          go build -trimpath -ldflags="-s -w" -o ech-workers${{ matrix.exe_ext }} ech-workers.go
+          go build -trimpath -ldflags="-s -w" -o ech-workers${{ matrix.exe_ext }} .
         shell: bash
 
       # 下面这些步骤：只有打 tag 且 enable_gui == true 时才会执行，用来打包 GUI

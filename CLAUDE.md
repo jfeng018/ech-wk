@@ -12,7 +12,7 @@ The communication pipeline is: **local client (Go)** — WebSocket tunnel — **
 
 The three major components are largely independent:
 
-- **`ech-workers.go`** — the Go core proxy engine (single-file, standard library + `github.com/gorilla/websocket`). This is the only real proxy logic. Runs standalone or is spawned as a subprocess by the GUI / soft-router.
+- **`ech-workers.go`** — the Go core proxy engine (standard library + `github.com/gorilla/websocket`). This is the only real proxy logic. Runs standalone or is spawned as a subprocess by the GUI / soft-router. It is split across three files in the same package: `ech-workers.go` (core + auth), `tproxy_linux.go` (`//go:build linux`, TPROXY via `getsockopt SO_ORIGINAL_DST`), `tproxy_other.go` (`//go:build !linux`, non-Linux stub). **Always build the package (`go build .`), never a single file** — building `ech-workers.go` alone omits the TPROXY files.
 - **`gui.py`** — Python/PyQt5 desktop GUI (PyQt5 + PySocks + pystray + Pillow). It is a *launcher/configurator*: it does NOT proxy traffic itself. It manages server configs, spawns `ech-workers` as a subprocess, tails its stdout into a log pane, and sets the OS system proxy.
 - **`_worker.js`** — the Cloudflare Worker server side (deployed separately to Workers). Receives WebSocket connections, parses a `CONNECT:host|port` framing protocol, opens outbound sockets via `connect()` from `cloudflare:sockets`, and pumps bytes both ways using `DATA:` / raw ArrayBuffer frames. Ships with CF fallback IPs (`CF_FALLBACK_IPS`) that are tried on Cloudflare connect errors.
 - **`softrouter.sh`** — standalone POSIX sh installer/deployer for OpenWrt / systemd / generic Linux soft routers. Detects arch and init system, downloads the matching release artifact from GitHub, installs `ech-workers` to `/usr/bin/ech-workers`, writes config to `/etc/ech-workers.conf`, and manages a service.
@@ -67,7 +67,7 @@ Only the Go core needs compilation; it requires Go 1.23+ (for ECH support).
 # Build the CLI proxy core (single static binary)
 go mod init ech-workers   # only if go.mod absent (tidy pulls in gorilla/websocket)
 go mod tidy
-go build -o ech-workers ech-workers.go
+go build -o ech-workers .
 
 # Run it (server address is mandatory)
 ./ech-workers -f your-worker.workers.dev:443

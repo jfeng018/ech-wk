@@ -36,7 +36,7 @@ go mod init ech-workers
 go mod tidy
 
 # 编译
-go build -o ech-workers ech-workers.go
+go build -o ech-workers .
 ```
 
 #### 运行 Python 客户端
@@ -107,7 +107,7 @@ pip install PyQt5
 
 确保已编译 Go 程序：
 ```bash
-go build -o ech-workers ech-workers.go
+go build -o ech-workers .
 ```
 
 ## 开发
@@ -116,7 +116,7 @@ go build -o ech-workers ech-workers.go
 
 ```bash
 # 编译 Go
-go build -o ech-workers ech-workers.go
+go build -o ech-workers .
 
 # 测试 Python
 python3 -m py_compile gui.py

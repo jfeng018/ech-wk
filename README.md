@@ -648,7 +648,7 @@ curl --socks5 127.0.0.1:30001 http://www.google.com
 **解决方案**:
 1. 确保已编译 Go 程序：
    ```bash
-   go build -o ech-workers ech-workers.go
+   go build -o ech-workers .
    ```
 2. 确保 `ech-workers` 与 GUI 在同一目录
 3. 检查文件执行权限（Linux/macOS）：
