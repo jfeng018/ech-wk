@@ -98,6 +98,11 @@
 - **Linux x86_64**: `ECHWorkers-linux-amd64.tar.gz`
 - **Linux ARM64**: `ECHWorkers-linux-arm64.tar.gz`
 
+#### macOS 菜单栏应用（原生 SwiftUI，参照 CodexBar 风格）
+- **Apple Silicon**: `ECHWorkers-macOS-arm64-bar.zip`
+- **Intel**: `ECHWorkers-macOS-amd64-bar.zip`
+- 无 Dock 图标，菜单栏控制代理启停、切换服务器、查看日志；与 PyQt5 版共享同一配置文件。
+
 #### 软路由版本（仅命令行）
 - **Linux x86_64**: `ECHWorkers-linux-amd64-softrouter.tar.gz`
 - **Linux ARM64**: `ECHWorkers-linux-arm64-softrouter.tar.gz`
@@ -361,6 +366,8 @@ $env:HTTPS_PROXY="socks5://127.0.0.1:30001"
 ```
 
 ## 🖥️ 图形界面使用
+
+> **macOS 推荐**: 使用原生菜单栏应用 `EchWorkersBar`（参照 CodexBar 风格，无 Dock 图标，菜单栏控制启停/切换服务器/查看日志）。下载 `ECHWorkers-macOS-*-bar.zip`，解压后把 `EchWorkersBar.app` 拖入"应用程序"即可。它与下方的 PyQt5 版共享同一份服务器配置。若需系统代理设置或开机自启，仍可用 PyQt5 版。
 
 ### 基本使用
 

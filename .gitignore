@@ -1,0 +1,26 @@
+# Go build artifacts
+ech-workers
+ech-workers.exe
+/dist/
+
+# Python (gui.py)
+__pycache__/
+*.pyc
+build/
+
+# Swift (macos menu bar app)
+macos/EchWorkersBar/.build/
+*.xcuserstate
+
+# 中国 IP 列表(运行时自动下载)
+chn_ip.txt
+chn_ip_v6.txt
+
+# macOS
+.DS_Store
+
+# 打包产物
+*.zip
+*.tar.gz
+*.app
+release/

@@ -520,6 +520,78 @@ jobs:
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ github.ref_name }}
 
+  # macOS 原生菜单栏应用 (EchWorkersBar, 参照 CodexBar) —— 打 tag 时构建 .app 并附到 release
+  macos-app:
+    name: Build macOS menu bar app (${{ matrix.goarch }})
+    runs-on: ${{ matrix.os }}
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            goarch: arm64
+          - os: macos-15-intel
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      # 复用 build job 产出的 darwin 二进制,打进 .app Resources,做成自包含应用
+      - name: Download ech-workers binary (darwin ${{ matrix.goarch }})
+        uses: actions/download-artifact@v4
+        with:
+          name: ECHWorkers-darwin-${{ matrix.goarch }}
+          path: darwin-artifact
+
+      - name: Extract ech-workers binary
+        run: |
+          mkdir -p stage
+          unzip -o "darwin-artifact/ECHWorkers-darwin-${{ matrix.goarch }}.zip" -d stage
+          chmod +x stage/ech-workers
+        shell: bash
+
+      - name: Build release (swift build)
+        run: swift build -c release --package-path macos/EchWorkersBar
+        shell: bash
+
+      - name: Assemble .app bundle
+        run: |
+          set -e
+          APP="EchWorkersBar.app"
+          rm -rf "$APP"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp macos/EchWorkersBar/.build/release/EchWorkersBar "$APP/Contents/MacOS/EchWorkersBar"
+          cp stage/ech-workers "$APP/Contents/Resources/ech-workers"
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>EchWorkersBar</string>
+            <key>CFBundleDisplayName</key><string>ECH Workers</string>
+            <key>CFBundleIdentifier</key><string>com.echworkers.bar</string>
+            <key>CFBundleVersion</key><string>${{ github.ref_name }}</string>
+            <key>CFBundleShortVersionString</key><string>${{ github.ref_name }}</string>
+            <key>CFBundleExecutable</key><string>EchWorkersBar</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>LSUIElement</key><true/>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+        shell: bash
+
+      - name: Zip .app
+        run: zip -r "ECHWorkers-macOS-${{ matrix.goarch }}-bar.zip" EchWorkersBar.app
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: echworkers-bar-macos-${{ matrix.goarch }}
+          path: ECHWorkers-macOS-${{ matrix.goarch }}-bar.zip
+          retention-days: 30
+
   # 防漂移：校验 softrouter 架构名在 矩阵 / uci-defaults / softrouter.sh 三处一致
   check-arch-alignment:
     name: Verify softrouter arch alignment
