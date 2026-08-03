@@ -18,7 +18,7 @@ The three major components are largely independent:
 - **`softrouter.sh`** — standalone POSIX sh installer/deployer for OpenWrt / systemd / generic Linux soft routers. Detects arch and init system, downloads the matching release artifact from GitHub, installs `ech-workers` to `/usr/bin/ech-workers`, writes config to `/etc/ech-workers.conf`, and manages a service.
 - **`luci-app-ech-workers/`** — vendored OpenWrt LuCI app (from [SunshineList/luci-app-ech-workers](https://github.com/SunshineList/luci-app-ech-workers), maintained in-tree). Standard LuCI package: `Makefile`, `luasrc/` (controller/cbi/views), `po/`, `root/etc/` (UCI config, procd init.d with nftables TPROXY rules, uci-defaults that auto-downloads the ech-wk softrouter binary on install). It manages the same `ech-workers` binary — the old `server/echo-worker.go` fork was unified into `ech-workers.go` (TPROXY + auth both live in the one binary).
 - **`.github/workflows/build.yml`** — GitHub Actions: Go cross-compile matrix (desktop GUI + CLI soft-router variants incl. armv6/armv7/mips/mipsle via `GOARM`/`GOMIPS`). On tags it also builds the GUI with PyInstaller, the LuCI ipk (OpenWrt SDK), a multi-arch GHCR Docker image, and the native macOS menu bar app. There is no checked-in `go.mod`/`go.sum` — CI runs `go mod init ech-workers && go mod tidy` itself.
-- **`macos/EchWorkersBar/`** — native macOS menu-bar app (SwiftUI `MenuBarExtra`, Swift 5.9 SPM package), modeled on [CodexBar](https://github.com/steipete/CodexBar). No Dock icon, menu-bar status dot, start/stop the proxy, recent-log feed, settings window. **Config is shared** with `gui.py` — both read/write `~/Library/Application Support/ECHWorkersClient/config.json`. Build with `cd macos/EchWorkersBar && swift build`. The repo is **multi-GUI**: `gui.py` (PyQt5) for Windows/Linux, `EchWorkersBar` (Swift/SwiftUI) for macOS.
+- **`macos/EchWorkersBar/`** — native macOS menu-bar app (SwiftUI `MenuBarExtra`, Swift 5.9 SPM package). No Dock icon, menu-bar status dot, start/stop the proxy, recent-log feed, settings window. **Config is shared** with `gui.py` — both read/write `~/Library/Application Support/ECHWorkersClient/config.json`. Build with `cd macos/EchWorkersBar && swift build`. The repo is **multi-GUI**: `gui.py` (PyQt5) for Windows/Linux, `EchWorkersBar` (Swift/SwiftUI) for macOS.
 
 ## The Go core (`ech-workers.go`)
 
@@ -53,7 +53,7 @@ Two key classes:
 
 ## The macOS menu bar app (`macos/EchWorkersBar/`)
 
-Native SwiftUI menu-bar app for macOS (deprecated `gui.py` PyQt5 path is the Windows/Linux GUI; the macOS GUI is this app). Modeled on CodexBar (no Dock icon, `.accessory` activation policy, dynamic status dot).
+Native SwiftUI menu-bar app for macOS (the Windows/Linux GUI is `gui.py` PyQt5; the macOS GUI is this app). No Dock icon (`.accessory` activation policy), dynamic status dot.
 
 - `EchWorkersBarApp.swift` — `@main`, `MenuBarExtra` (green/gray dot = running/stopped), `.menuBarExtraStyle(.window)` popover, plus a `Window(id: "settings")` for settings.
 - `ConfigStore.swift` — reads/writes the **same config.json as gui.py** (`~/Library/Application Support/ECHWorkersClient/config.json`), so both GUIs share server setups. Snapshot model: `ServerConfig` (fields mirror gui.py; snake_case identifiers make JSON keys match without `CodingKeys`).

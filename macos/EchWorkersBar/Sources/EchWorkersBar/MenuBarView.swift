@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// 菜单栏弹窗内容:状态 + 启停 + 服务器切换 + 最近日志 + 设置/退出。
-/// 参照 CodexBar 的极简信息密度风格。
+/// 极简信息密度的原生菜单栏风格。
 struct MenuBarView: View {
     @EnvironmentObject var config: ConfigStore
     @EnvironmentObject var proxy: ProxyManager

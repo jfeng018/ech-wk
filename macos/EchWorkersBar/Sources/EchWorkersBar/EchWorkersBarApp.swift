@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// 菜单栏应用入口 —— 参照 CodexBar:无 Dock 图标、动态菜单栏图标、极简原生 UI。
+/// 菜单栏应用入口 —— 无 Dock 图标、动态菜单栏图标、极简原生 UI。
 @main
 struct EchWorkersBarApp: App {
     @StateObject private var config = ConfigStore()
