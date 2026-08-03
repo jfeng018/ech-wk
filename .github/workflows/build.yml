@@ -635,7 +635,7 @@ jobs:
         shell: bash
 
   release:
-    needs: [build, luci]
+    needs: [build, luci, macos-app]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
 
