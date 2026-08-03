@@ -1,0 +1,88 @@
+#!/bin/sh
+# 首次安装时的初始化脚本
+
+# 从 ech-wk 仓库 (byJoey/ech-wk) 的最新 release 下载软路由二进制
+# 归档名: ECHWorkers-linux-<arch>-softrouter.tar.gz (内含 ech-workers 二进制 + 中国IP列表)
+DOWNLOAD_BASE="https://github.com/byJoey/ech-wk/releases/latest/download"
+BIN_PATH="/usr/bin/ech-workers"
+TMP_ARCHIVE="/tmp/ech-workers.tar.gz"
+TMP_DIR="/tmp/ech-workers-tmp"
+
+# 确保配置文件存在
+[ -f /etc/config/ech-workers ] || touch /etc/config/ech-workers
+
+# 设置 init 脚本权限
+chmod +x /etc/init.d/ech-workers 2>/dev/null
+
+# 清除 LuCI 缓存
+rm -rf /tmp/luci-modulecache /tmp/luci-indexcache 2>/dev/null
+
+# 如果二进制文件不存在，自动下载
+if [ ! -x "$BIN_PATH" ]; then
+    # 检测架构
+    ARCH=$(uname -m)
+    case "$ARCH" in
+        aarch64)
+            BIN_NAME="ECHWorkers-linux-arm64-softrouter.tar.gz"
+            ;;
+        armv7l|armv7)
+            BIN_NAME="ECHWorkers-linux-armv7-softrouter.tar.gz"
+            ;;
+        armv6l|armv6)
+            BIN_NAME="ECHWorkers-linux-armv6-softrouter.tar.gz"
+            ;;
+        x86_64)
+            BIN_NAME="ECHWorkers-linux-amd64-softrouter.tar.gz"
+            ;;
+        mips)
+            BIN_NAME="ECHWorkers-linux-mips-softrouter.tar.gz"
+            ;;
+        mipsel|mipsle|mips64el)
+            BIN_NAME="ECHWorkers-linux-mipsle-softrouter.tar.gz"
+            ;;
+        *)
+            logger -t "ech-workers" "不支持的架构: $ARCH"
+            exit 0
+            ;;
+    esac
+
+    DOWNLOAD_URL="${DOWNLOAD_BASE}/${BIN_NAME}"
+    logger -t "ech-workers" "正在下载 $BIN_NAME ..."
+
+    # 尝试使用 wget 或 curl 下载
+    if command -v wget >/dev/null 2>&1; then
+        wget -q --no-check-certificate -O "$TMP_ARCHIVE" "$DOWNLOAD_URL"
+    elif command -v curl >/dev/null 2>&1; then
+        curl -sL -o "$TMP_ARCHIVE" "$DOWNLOAD_URL"
+    else
+        logger -t "ech-workers" "错误: 未找到 wget 或 curl"
+        exit 0
+    fi
+
+    # 解压并安装 ech-workers
+    if [ -f "$TMP_ARCHIVE" ] && [ -s "$TMP_ARCHIVE" ]; then
+        mkdir -p "$TMP_DIR"
+        rm -rf "$TMP_DIR"/* 2>/dev/null
+        # busybox tar 兼容：先尝试 -zxvf，失败则 gzip -d 后 tar -xf
+        if tar -zxvf "$TMP_ARCHIVE" -C "$TMP_DIR" >/dev/null 2>&1; then
+            :
+        else
+            gzip -d -f "$TMP_ARCHIVE" 2>/dev/null
+            tar -xf "${TMP_ARCHIVE%.gz}" -C "$TMP_DIR" 2>/dev/null
+        fi
+        if [ -x "$TMP_DIR/ech-workers" ]; then
+            cp "$TMP_DIR/ech-workers" "$BIN_PATH"
+            chmod +x "$BIN_PATH"
+            logger -t "ech-workers" "ech-workers 下载完成"
+        else
+            rm -f "$BIN_PATH"
+            logger -t "ech-workers" "错误: 归档中未找到 ech-workers"
+        fi
+        rm -rf "$TMP_DIR" "$TMP_ARCHIVE" "${TMP_ARCHIVE%.gz}" 2>/dev/null
+    else
+        rm -f "$BIN_PATH"
+        logger -t "ech-workers" "错误: 下载失败"
+    fi
+fi
+
+exit 0

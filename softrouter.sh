@@ -16,6 +16,8 @@ DEFAULT_TOKEN=""
 DEFAULT_DNS="https://dns.alidns.com/dns-query"
 DEFAULT_ECH_DOMAIN="cloudflare-ech.com"
 DEFAULT_ROUTING="global"
+DEFAULT_USERNAME=""   # 本地代理认证用户名（可选，留空则不启用认证）
+DEFAULT_PASSWORD=""   # 本地代理认证密码（可选）
 
 # --- 系统检测 ---
 check_sys() {
@@ -68,8 +70,12 @@ check_env() {
 get_arch() {
     local arch=$(uname -m)
     case "$arch" in
-        x86_64) echo "amd64" ;;
+        x86_64)  echo "amd64" ;;
         aarch64) echo "arm64" ;;
+        armv7l|armv7) echo "armv7" ;;
+        armv6l|armv6) echo "armv6" ;;
+        mips)    echo "mips" ;;
+        mipsel|mipsle|mips64el) echo "mipsle" ;;
         *) echo "$arch" ;;
     esac
 }
@@ -127,11 +133,6 @@ get_latest_release_url() {
     rm -f "$api_response_file"
 
     ARCH=$(get_arch)
-    if [ "$ARCH" != "amd64" ] && [ "$ARCH" != "arm64" ]; then
-        echo "错误: 不支持的系统架构: $ARCH" >&2
-        return 1
-    fi
-    
     echo "检测到系统: $OS_TYPE, 架构: $ARCH" >&2
 
     download_url=""
@@ -212,6 +213,8 @@ TOKEN="$DEFAULT_TOKEN"
 DNS="$DEFAULT_DNS"
 ECH_DOMAIN="$DEFAULT_ECH_DOMAIN"
 ROUTING="$DEFAULT_ROUTING"
+USERNAME="$DEFAULT_USERNAME"
+PASSWORD="$DEFAULT_PASSWORD"
 EOF
     fi
 }
@@ -236,6 +239,13 @@ start_service() {
     : "${DNS:=https://dns.alidns.com/dns-query}"
     : "${ECH_DOMAIN:=cloudflare-ech.com}"
     : "${ROUTING:=global}"
+    : "${USERNAME:=}"
+    : "${PASSWORD:=}"
+
+    # 认证参数（仅在配置了用户名时追加）
+    AUTH_ARGS=""
+    [ -n "$USERNAME" ] && AUTH_ARGS="$AUTH_ARGS -username '${USERNAME}'"
+    [ -n "$PASSWORD" ] && AUTH_ARGS="$AUTH_ARGS -password '${PASSWORD}'"
 
     # 确保日志文件存在
     touch "$LOG"
@@ -243,7 +253,7 @@ start_service() {
     procd_open_instance
     # 使用 sh -c exec 方式将标准输出和错误重定向到日志文件
     # 这样可以确保即便是 OpenWrt 也能看到完整的日志
-    procd_set_param command /bin/sh -c "exec $BIN -f '${SERVER_ADDR}' -l '${LISTEN_ADDR}' -token '${TOKEN}' -ip '${BEST_IP}' -dns '${DNS}' -ech '${ECH_DOMAIN}' -routing '${ROUTING}' >> ${LOG} 2>&1"
+    procd_set_param command /bin/sh -c "exec $BIN -f '${SERVER_ADDR}' -l '${LISTEN_ADDR}' -token '${TOKEN}' -ip '${BEST_IP}' -dns '${DNS}' -ech '${ECH_DOMAIN}' -routing '${ROUTING}'${AUTH_ARGS} >> ${LOG} 2>&1"
     
     procd_set_param respawn
     # 不再使用 stdout/stderr 到 syslog，因为已经重定向到文件了
@@ -264,7 +274,7 @@ Type=simple
 EnvironmentFile=$CONF_FILE
 # 使用标准输出到文件，Systemd v236+ 支持 StandardOutput=append:
 # 为了兼容老版本，这里还是使用 sh -c 包装
-ExecStart=/bin/sh -c "exec $BIN_PATH -f \${SERVER_ADDR} -l \${LISTEN_ADDR} -token \${TOKEN} -ip \${BEST_IP} -dns \${DNS} -ech \${ECH_DOMAIN} -routing \${ROUTING} >> $LOG_FILE 2>&1"
+ExecStart=/bin/sh -c "exec $BIN_PATH -f \${SERVER_ADDR} -l \${LISTEN_ADDR} -token \${TOKEN} -ip \${BEST_IP} -dns \${DNS} -ech \${ECH_DOMAIN} -routing \${ROUTING}\${USERNAME:+ -username \${USERNAME}}\${PASSWORD:+ -password \${PASSWORD}} >> $LOG_FILE 2>&1"
 Restart=always
 User=root
 
@@ -286,7 +296,10 @@ svc_restart() {
         systemctl restart ech-workers
     else
         killall ech-workers 2>/dev/null
-        nohup "$BIN_PATH" -f "$SERVER_ADDR" -l "$LISTEN_ADDR" -token "$TOKEN" -ip "$BEST_IP" -dns "$DNS" -ech "$ECH_DOMAIN" -routing "$ROUTING" >> "$LOG_FILE" 2>&1 &
+        AUTH_ARGS=""
+        [ -n "$USERNAME" ] && AUTH_ARGS="$AUTH_ARGS -username \"$USERNAME\""
+        [ -n "$PASSWORD" ] && AUTH_ARGS="$AUTH_ARGS -password \"$PASSWORD\""
+        nohup "$BIN_PATH" -f "$SERVER_ADDR" -l "$LISTEN_ADDR" -token "$TOKEN" -ip "$BEST_IP" -dns "$DNS" -ech "$ECH_DOMAIN" -routing "$ROUTING"$AUTH_ARGS >> "$LOG_FILE" 2>&1 &
     fi
 }
 
@@ -364,6 +377,8 @@ TOKEN="${TOKEN}"
 DNS="${DNS}"
 ECH_DOMAIN="${ECH_DOMAIN}"
 ROUTING="${ROUTING}"
+USERNAME="${USERNAME}"
+PASSWORD="${PASSWORD}"
 EOF
 }
 
@@ -390,11 +405,12 @@ show_menu() {
         echo "3. 设置 监听地址  [$LISTEN_ADDR]"
         echo "4. 设置 Token     [${TOKEN:0:6}***]"
         echo "5. 设置 分流模式  [$ROUTING]"
+        echo "6. 设置 代理认证  [$([ -n "$USERNAME" ] && echo "${USERNAME:0:6}***" || echo "未启用")]"
         echo "----------------------------------"
-        echo "6. 启动 / 重启服务"
-        echo "7. 停止服务"
-        echo "8. 查看实时日志"
-        echo "9. 卸载程序"
+        echo "7. 启动 / 重启服务"
+        echo "8. 停止服务"
+        echo "9. 查看实时日志"
+        echo "10. 卸载程序"
         echo "0. 退出"
         echo "=================================="
         printf "请输入选项: "
@@ -434,20 +450,32 @@ show_menu() {
                 svc_restart
                 pause_key
                 ;;
-            6) 
+            6)
+                printf "代理认证用户名 (直接回车=清除/不启用): "; read -r USERNAME
+                if [ -n "$USERNAME" ]; then
+                    printf "代理认证密码: "; read -r PASSWORD
+                else
+                    PASSWORD=""
+                fi
+                save_conf
+                echo "配置已更新，正在重启服务..."
+                svc_restart
+                pause_key
+                ;;
+            7)
                 ensure_binary
                 ensure_init
                 svc_restart
                 echo "服务已重启..."
                 pause_key
                 ;;
-            7) 
+            8)
                 svc_stop
                 echo "服务已停止"
-                pause_key 
+                pause_key
                 ;;
-            8) svc_log ;;
-            9) uninstall ;;
+            9) svc_log ;;
+            10) uninstall ;;
             0) exit 0 ;;
             *) ;;
         esac

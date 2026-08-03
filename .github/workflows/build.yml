@@ -95,6 +95,57 @@ jobs:
             enable_gui: false
             cgo_enabled: "0"
 
+          # 软路由版本 - 旧款/嵌入式 OpenWrt 设备
+          - os: ubuntu-latest
+            goos: linux
+            goarch: armv7
+            goarch_target: arm
+            goarm: "7"
+            exe_ext: ""
+            archive_format: tar.gz
+            archive_ext: .tar.gz
+            target: softrouter
+            artifact_suffix: "-softrouter"
+            enable_gui: false
+            cgo_enabled: "0"
+
+          - os: ubuntu-latest
+            goos: linux
+            goarch: armv6
+            goarch_target: arm
+            goarm: "6"
+            exe_ext: ""
+            archive_format: tar.gz
+            archive_ext: .tar.gz
+            target: softrouter
+            artifact_suffix: "-softrouter"
+            enable_gui: false
+            cgo_enabled: "0"
+
+          - os: ubuntu-latest
+            goos: linux
+            goarch: mips
+            gomips: "softfloat"
+            exe_ext: ""
+            archive_format: tar.gz
+            archive_ext: .tar.gz
+            target: softrouter
+            artifact_suffix: "-softrouter"
+            enable_gui: false
+            cgo_enabled: "0"
+
+          - os: ubuntu-latest
+            goos: linux
+            goarch: mipsle
+            gomips: "softfloat"
+            exe_ext: ""
+            archive_format: tar.gz
+            archive_ext: .tar.gz
+            target: softrouter
+            artifact_suffix: "-softrouter"
+            enable_gui: false
+            cgo_enabled: "0"
+
     runs-on: ${{ matrix.os }}
     
     steps:
@@ -115,7 +166,9 @@ jobs:
       - name: Build Go executable
         env:
           GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
+          GOARCH: ${{ matrix.goarch_target || matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          GOMIPS: ${{ matrix.gomips }}
           CGO_ENABLED: ${{ matrix.cgo_enabled }}
         run: |
           echo "Building for $GOOS/$GOARCH (target=${{ matrix.target }}, CGO_ENABLED=$CGO_ENABLED)"
@@ -355,11 +408,131 @@ jobs:
           path: ECHWorkers-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.artifact_suffix }}${{ matrix.archive_ext }}
           retention-days: 30
 
+  # OpenWrt LuCI 图形界面应用 (luci-app-ech-workers) —— 用 x86/64 SDK 构建 _all.ipk
+  luci:
+    name: Build LuCI ipk (OpenWrt SDK)
+    runs-on: ubuntu-latest
+    env:
+      SDK_VERSION: "24.10.8"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install zstd
+        run: sudo apt-get update && sudo apt-get install -y zstd
+
+      # 缓存 OpenWrt SDK + feeds（发行版 SDK 的 feeds 固定 commit，缓存安全）
+      - name: Restore SDK + feeds cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: sdk
+          key: ech-wk-luci-sdk-${{ env.SDK_VERSION }}
+
+      - name: Download OpenWrt SDK (24.10)
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          SDK_BASE="https://downloads.openwrt.org/releases/${SDK_VERSION}/targets/x86/64"
+          # 从 sha256sums 动态解析 SDK 文件名（不同版本 gcc 版本/命名不同，不硬编码）
+          SDK_FILE=$(curl -s "${SDK_BASE}/sha256sums" \
+            | awk '/openwrt-sdk-.*-x86-64.*\.tar\.zst/{print $2; exit}' | sed 's/^\*//')
+          if [ -z "$SDK_FILE" ]; then
+            echo "找不到 SDK 文件，请升级 SDK_VERSION"
+            exit 1
+          fi
+          echo "SDK: $SDK_FILE"
+          curl -fSL -o sdk.tar.zst "${SDK_BASE}/${SDK_FILE}"
+          tar --zstd -xf sdk.tar.zst
+          mv openwrt-sdk-* sdk
+        shell: bash
+
+      # 提供 feeds/luci/luci.mk 及 luci-base 等依赖（luci-app-ech-workers/Makefile include 它）
+      - name: Update & install feeds
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: |
+          cd sdk
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+        shell: bash
+
+      - name: Configure buildroot
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: cd sdk && make defconfig
+        shell: bash
+
+      - name: Build luci-app-ech-workers
+        run: |
+          rm -rf sdk/package/luci-app-ech-workers
+          cp -r luci-app-ech-workers sdk/package/luci-app-ech-workers
+          cd sdk
+          make package/luci-app-ech-workers/compile V=s
+        shell: bash
+
+      - name: Locate ipk
+        run: find sdk/bin -name 'luci-app-ech-workers_*.ipk' -exec cp {} . \;
+        shell: bash
+
+      - name: Save SDK + feeds cache
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: sdk
+          key: ech-wk-luci-sdk-${{ env.SDK_VERSION }}
+
+      - name: Upload ipk artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-ech-workers
+          path: luci-app-ech-workers_*.ipk
+          retention-days: 30
+
+  # 防漂移：校验 softrouter 架构名在 矩阵 / uci-defaults / softrouter.sh 三处一致
+  check-arch-alignment:
+    name: Verify softrouter arch alignment
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check arch names across matrix / uci-defaults / softrouter.sh
+        run: |
+          python3 - <<'PY'
+          import re, yaml
+          wf = yaml.safe_load(open('.github/workflows/build.yml'))
+          m = wf['jobs']['build']['strategy']['matrix']['include']
+          # 矩阵实际产出的软路由归档名（goos-goarch-suffix-ext 拼接）
+          produced = set()
+          for e in m:
+              if e.get('target') == 'softrouter':
+                  produced.add("ECHWorkers-{goos}-{goarch}{suffix}{ext}".format(
+                      goos=e['goos'], goarch=e['goarch'],
+                      suffix=e.get('artifact_suffix', ''), ext=e['archive_ext']))
+          # uci-defaults 引用的产物名
+          uci = open('luci-app-ech-workers/root/etc/uci-defaults/luci-ech-workers').read()
+          refs = set(re.findall(r'ECHWorkers-linux-[a-z0-9-]+-softrouter\.tar\.gz', uci))
+          missing = refs - produced
+          assert not missing, "uci-defaults 引用但矩阵不产出: %s" % sorted(missing)
+          unreferenced = produced - refs
+          assert not unreferenced, "矩阵产出但 uci-defaults 未引用: %s" % sorted(unreferenced)
+          # softrouter.sh get_arch() 的架构 token
+          src = open('softrouter.sh').read()
+          ga = src[src.index('get_arch()'):src.index('}', src.index('get_arch()'))]
+          tokens = set(re.findall(r'echo "([a-z0-9]+)"', ga)) - {'$arch'}
+          for t in tokens:
+              assert any(("linux-%s-softrouter.tar.gz" % t) in n for n in produced), \
+                  "softrouter.sh 架构 %s 无对应矩阵产物" % t
+          # 反向：每个矩阵软路由产物的架构 token 必须被 uci-defaults 或 softrouter.sh 覆盖
+          for n in produced:
+              tok = re.search(r'linux-([a-z0-9]+)-softrouter\.tar\.gz', n).group(1)
+              assert tok in tokens or (("linux-%s-softrouter.tar.gz" % tok) in uci), \
+                  "架构 %s 缺少覆盖" % tok
+          print("OK: 矩阵 / uci-defaults / softrouter.sh 三方对齐; softrouter 产物 %d 个" % len(produced))
+          PY
+        shell: bash
+
   release:
-    needs: build
+    needs: [build, luci]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
-    
+
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -372,6 +545,7 @@ jobs:
           files: |
             artifacts/**/*.zip
             artifacts/**/*.tar.gz
+            artifacts/**/*.ipk
           draft: false
           prerelease: false
         env:

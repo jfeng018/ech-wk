@@ -1,0 +1,169 @@
+#!/bin/sh /etc/rc.common
+# ECH Workers Proxy Service
+# procd init script with native TPROXY support (redirect mode)
+
+USE_PROCD=1
+START=99
+STOP=10
+
+NAME="ech-workers"
+BIN="/usr/bin/ech-workers"
+NFT_TABLE="ech-tproxy"
+
+# 设置 nftables 透明代理规则（使用 redirect 模式，仅处理 80/443 端口）
+setup_nftables() {
+    local tproxy_port="$1"
+    local server_addr="$2"
+    
+    # 清理旧规则
+    nft delete table inet $NFT_TABLE 2>/dev/null
+    
+    # 创建新表和链
+    nft add table inet $NFT_TABLE
+    nft add chain inet $NFT_TABLE prerouting { type nat hook prerouting priority -100 \; }
+    
+    # === IPv4 规则 ===
+    # 排除本地地址、私有地址
+    nft add rule inet $NFT_TABLE prerouting ip daddr 127.0.0.0/8 return
+    nft add rule inet $NFT_TABLE prerouting ip daddr 10.0.0.0/8 return
+    nft add rule inet $NFT_TABLE prerouting ip daddr 172.16.0.0/12 return
+    nft add rule inet $NFT_TABLE prerouting ip daddr 192.168.0.0/16 return
+    nft add rule inet $NFT_TABLE prerouting ip daddr 224.0.0.0/4 return
+    nft add rule inet $NFT_TABLE prerouting ip daddr 240.0.0.0/4 return
+    
+    # 排除代理服务器 IP（避免循环代理）
+    if [ -n "$server_addr" ]; then
+        # 提取主机名（去掉端口）
+        local server_host=$(echo "$server_addr" | cut -d':' -f1)
+        # 检查是否是 IP 地址
+        local resolved_ip=$(echo "$server_host" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+        if [ -z "$resolved_ip" ]; then
+            # 尝试解析域名
+            resolved_ip=$(nslookup "$server_host" 2>/dev/null | grep -A1 'Name:' | grep 'Address' | head -1 | awk '{print $2}')
+        fi
+        if [ -n "$resolved_ip" ]; then
+            nft add rule inet $NFT_TABLE prerouting ip daddr "$resolved_ip" return
+            logger -t "$NAME" "排除代理服务器 IP: $resolved_ip"
+        fi
+    fi
+    
+    # 重定向来自 LAN 的 IPv4 HTTP/HTTPS 流量到 TPROXY 端口
+    nft add rule inet $NFT_TABLE prerouting iifname "br-lan" ip version 4 tcp dport 80 redirect to :$tproxy_port
+    nft add rule inet $NFT_TABLE prerouting iifname "br-lan" ip version 4 tcp dport 443 redirect to :$tproxy_port
+    
+    # === IPv6 规则 ===
+    # 排除 IPv6 本地地址
+    nft add rule inet $NFT_TABLE prerouting ip6 daddr ::1/128 return
+    nft add rule inet $NFT_TABLE prerouting ip6 daddr fe80::/10 return
+    nft add rule inet $NFT_TABLE prerouting ip6 daddr fc00::/7 return
+    nft add rule inet $NFT_TABLE prerouting ip6 daddr ff00::/8 return
+    
+    # 阻止 IPv6 的 HTTP/HTTPS（强制客户端回退到 IPv4）
+    nft add rule inet $NFT_TABLE prerouting iifname "br-lan" ip6 version 6 tcp dport 80 drop
+    nft add rule inet $NFT_TABLE prerouting iifname "br-lan" ip6 version 6 tcp dport 443 drop
+    
+    logger -t "$NAME" "nftables 规则已应用 (端口: $tproxy_port, 仅 HTTP/HTTPS, IPv6 阻止)"
+}
+
+# 清理 nftables 规则
+cleanup_nftables() {
+    nft delete table inet $NFT_TABLE 2>/dev/null
+    logger -t "$NAME" "nftables 规则已清理"
+}
+
+# 设置透明代理规则
+setup_tproxy_rules() {
+    local tproxy_enabled tproxy_port server_addr
+    config_get tproxy_enabled "config" "tproxy_enabled" "0"
+    config_get tproxy_port "config" "tproxy_port" "12581"
+    config_get server_addr "config" "server_addr" ""
+    
+    [ "$tproxy_enabled" = "1" ] || return 0
+    
+    setup_nftables "$tproxy_port" "$server_addr"
+    
+    logger -t "$NAME" "透明代理规则已设置"
+    return 0
+}
+
+# 停止透明代理
+stop_tproxy() {
+    cleanup_nftables
+}
+
+start_service() {
+    config_load "$NAME"
+    
+    local enabled server_addr listen_addr token username password best_ip dns ech_domain routing tproxy_enabled tproxy_port
+    
+    config_get enabled "config" "enabled" "0"
+    [ "$enabled" = "1" ] || return 0
+    
+    config_get server_addr "config" "server_addr" ""
+    [ -z "$server_addr" ] && {
+        logger -t "$NAME" "服务器地址未配置"
+        return 1
+    }
+    
+    config_get listen_addr "config" "listen_addr" "0.0.0.0:30001"
+    config_get token "config" "token" ""
+    config_get username "config" "username" ""
+    config_get password "config" "password" ""
+    config_get best_ip "config" "best_ip" ""
+    config_get dns "config" "dns" "dns.alidns.com/dns-query"
+    config_get ech_domain "config" "ech_domain" "cloudflare-ech.com"
+    config_get routing "config" "routing" "global"
+    config_get tproxy_enabled "config" "tproxy_enabled" "0"
+    config_get tproxy_port "config" "tproxy_port" "12581"
+    
+    [ ! -x "$BIN" ] && {
+        logger -t "$NAME" "二进制文件不存在: $BIN"
+        return 1
+    }
+    
+    # 先设置透明代理规则（在启动服务之前）
+    setup_tproxy_rules
+    
+    # 启动 ech-workers（带 TPROXY 支持）
+    procd_open_instance "$NAME"
+    procd_set_param command "$BIN"
+    procd_append_param command -f "$server_addr"
+    procd_append_param command -l "$listen_addr"
+    
+    [ -n "$token" ] && procd_append_param command -token "$token"
+    [ -n "$username" ] && procd_append_param command -username "$username"
+    [ -n "$password" ] && procd_append_param command -password "$password"
+    [ -n "$best_ip" ] && procd_append_param command -ip "$best_ip"
+    [ -n "$dns" ] && procd_append_param command -dns "$dns"
+    [ -n "$ech_domain" ] && procd_append_param command -ech "$ech_domain"
+    [ -n "$routing" ] && procd_append_param command -routing "$routing"
+    
+    # 如果启用了透明代理，添加 -tproxy 参数
+    [ "$tproxy_enabled" = "1" ] && procd_append_param command -tproxy "0.0.0.0:$tproxy_port"
+    
+    procd_set_param respawn "${respawn_threshold:-3600}" "${respawn_timeout:-5}" "${respawn_retry:-5}"
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param file /etc/config/ech-workers
+    procd_close_instance
+    
+    logger -t "$NAME" "服务已启动"
+    
+    if [ "$tproxy_enabled" = "1" ]; then
+        logger -t "$NAME" "透明代理已启用 (TPROXY 端口: $tproxy_port)"
+    fi
+}
+
+stop_service() {
+    stop_tproxy
+    logger -t "$NAME" "服务已停止"
+}
+
+service_triggers() {
+    procd_add_reload_trigger "$NAME"
+}
+
+reload_service() {
+    stop
+    start
+}
