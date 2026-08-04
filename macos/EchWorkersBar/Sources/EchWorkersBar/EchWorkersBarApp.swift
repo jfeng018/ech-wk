@@ -26,13 +26,5 @@ struct EchWorkersBarApp: App {
                 .foregroundStyle(proxy.isRunning ? Color.green : Color.gray)
         }
         .menuBarExtraStyle(.window)
-
-        // 设置窗口
-        Window("设置", id: "settings") {
-            SettingsView()
-                .environmentObject(config)
-                .environmentObject(proxy)
-        }
-        .windowResizability(.contentSize)
     }
 }

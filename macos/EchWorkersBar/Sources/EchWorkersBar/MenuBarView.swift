@@ -6,7 +6,6 @@ import AppKit
 struct MenuBarView: View {
     @EnvironmentObject var config: ConfigStore
     @EnvironmentObject var proxy: ProxyManager
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -74,7 +73,7 @@ struct MenuBarView: View {
 
             Divider()
             Button("设置…") {
-                openWindow(id: "settings")
+                SettingsWindowController.shared.show(config: config, proxy: proxy)
             }
             Button("退出 ECH Workers") {
                 NSApp.terminate(nil)
