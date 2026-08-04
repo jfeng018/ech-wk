@@ -19,6 +19,14 @@ final class ConfigStore: ObservableObject {
         servers.first { $0.id == current_server_id } ?? servers.first
     }
 
+    /// 当前服务器监听端口(用于设置系统代理)
+    var listenPort: Int? {
+        guard let listen = currentServer?.listen,
+              let last = listen.split(separator: ":").last,
+              let port = Int(last) else { return nil }
+        return port
+    }
+
     init() {
         load()
     }

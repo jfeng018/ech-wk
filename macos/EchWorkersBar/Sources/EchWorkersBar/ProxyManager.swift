@@ -84,6 +84,11 @@ final class ProxyManager: ObservableObject {
         logLines.removeAll()
     }
 
+    /// 追加一条 UI/系统层面的日志(如系统代理、开机自启操作记录)
+    func log(_ line: String) {
+        appendLog(line)
+    }
+
     // MARK: 参数组装 (与 gui.py ProcessThread.run 一致,仅非空/非默认传)
     private func buildArguments(for server: ServerConfig) -> [String] {
         var args: [String] = []
