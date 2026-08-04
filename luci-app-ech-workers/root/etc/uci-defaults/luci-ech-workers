@@ -1,9 +1,9 @@
 #!/bin/sh
 # 首次安装时的初始化脚本
 
-# 从 ech-wk 仓库 (byJoey/ech-wk) 的最新 release 下载软路由二进制
+# 从 ech-wk 仓库 (jfeng018/ech-wk) 的最新 release 下载软路由二进制
 # 归档名: ECHWorkers-linux-<arch>-softrouter.tar.gz (内含 ech-workers 二进制 + 中国IP列表)
-DOWNLOAD_BASE="https://github.com/byJoey/ech-wk/releases/latest/download"
+DOWNLOAD_BASE="https://github.com/jfeng018/ech-wk/releases/latest/download"
 BIN_PATH="/usr/bin/ech-workers"
 TMP_ARCHIVE="/tmp/ech-workers.tar.gz"
 TMP_DIR="/tmp/ech-workers-tmp"
