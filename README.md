@@ -1,6 +1,6 @@
 # ECH Workers 客户端
 
-[![GitHub release](https://img.shields.io/github/release/byJoey/ech-wk.svg)](https://github.com/byJoey/ech-wk/releases)
+[![GitHub release](https://img.shields.io/github/release/jfeng018/ech-wk.svg)](https://github.com/jfeng018/ech-wk/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 跨平台的 ECH Workers 代理客户端，支持 Windows、macOS 和 Linux（ARM/x86），提供图形界面和命令行两种使用方式。
@@ -89,7 +89,7 @@
 
 ### 方法 1: 使用预编译版本（推荐）
 
-从 [GitHub Releases](https://github.com/byJoey/ech-wk/releases) 下载对应平台的压缩包：
+从 [GitHub Releases](https://github.com/jfeng018/ech-wk/releases) 下载对应平台的压缩包：
 
 #### 桌面版本（包含 GUI）
 - **Windows x64**: `ECHWorkers-windows-amd64.zip`
@@ -408,17 +408,25 @@ $env:HTTPS_PROXY="socks5://127.0.0.1:30001"
 
 本仓库已内置 OpenWrt LuCI 图形界面应用 `luci-app-ech-workers/`（源自 [SunshineList/luci-app-ech-workers](https://github.com/SunshineList/luci-app-ech-workers)），支持 TPROXY 透明代理与账号密码认证：
 
-1. **编译安装 ipk**（需要 OpenWrt SDK / 已配置 LuCI feed）：
-   ```bash
-   # 在 OpenWrt SDK 目录
-   cp -r luci-app-ech-workers package/
-   ./scripts/feeds update -i
-   make package/luci-app-ech-workers/compile V=s
-   # 生成的 ipk 位于 bin/packages/.../
-   scp bin/packages/*/luci-app-ech-workers_*.ipk root@192.168.1.1:/tmp/
-   ssh root@192.168.1.1 "opkg install /tmp/luci-app-ech-workers_*.ipk"
-   ```
-2. **首次安装自动下载二进制**：安装后访问 **服务 → Tuple ECH Worker**，`uci-defaults` 会自动从本仓库 Release 下载对应架构的 `ech-workers`（amd64/arm64/armv7/armv6/mips/mipsle 软路由版）到 `/usr/bin/ech-workers`。
+**方式一：从 Release 直接下载 ipk（推荐，免编译）**
+```bash
+# 从 https://github.com/jfeng018/ech-wk/releases 下载 luci-app-ech-workers_*_all.ipk
+scp luci-app-ech-workers_*.ipk root@192.168.1.1:/tmp/
+ssh root@192.168.1.1 "opkg install /tmp/luci-app-ech-workers_*.ipk"
+```
+
+**方式二：OpenWrt SDK 编译安装（可选）**
+```bash
+# 在 OpenWrt SDK 目录
+cp -r luci-app-ech-workers package/
+./scripts/feeds update -i
+make package/luci-app-ech-workers/compile V=s
+# 生成的 ipk 位于 bin/packages/.../
+scp bin/packages/*/luci-app-ech-workers_*.ipk root@192.168.1.1:/tmp/
+ssh root@192.168.1.1 "opkg install /tmp/luci-app-ech-workers_*.ipk"
+```
+
+**安装后**：访问 **服务 → Tuple ECH Worker** 配置。首次安装时 `uci-defaults` 会自动检测路由器架构，并从本仓库 Release 下载对应 `ech-workers` 二进制（amd64/arm64/armv7/armv6/mips/mipsle 软路由版）到 `/usr/bin/ech-workers`，无需手动安装。
 
 > **注意**: 如果自动下载失败（如路由器无法访问 GitHub），可手动下载对应架构的 `ECHWorkers-linux-*-softrouter.tar.gz`，解压出 `ech-workers` 放到 `/usr/bin/ech-workers` 并 `chmod +x`。
 
@@ -426,7 +434,7 @@ $env:HTTPS_PROXY="socks5://127.0.0.1:30001"
 ### 一键脚本
 ```bash
 
-wget https://raw.githubusercontent.com/byJoey/ech-wk/refs/heads/main/softrouter.sh
+wget https://raw.githubusercontent.com/jfeng018/ech-wk/refs/heads/main/softrouter.sh
 chmod +x softrouter.sh
 ./softrouter.sh
 ```
@@ -781,18 +789,18 @@ ECH 是 TLS 1.3 的扩展功能，用于加密 TLS 握手中的 SNI（服务器�
 
 ## 🌟 Star History
 
-<a href="https://www.star-history.com/#byJoey/ech-wk&type=timeline&logscale&legend=top-left">
+<a href="https://www.star-history.com/#jfeng018/ech-wk&type=timeline&logscale&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=byJoey/ech-wk&type=timeline&theme=dark&logscale&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=byJoey/ech-wk&type=timeline&logscale&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=byJoey/ech-wk&type=timeline&logscale&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=jfeng018/ech-wk&type=timeline&theme=dark&logscale&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=jfeng018/ech-wk&type=timeline&logscale&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=jfeng018/ech-wk&type=timeline&logscale&legend=top-left" />
  </picture>
 </a>
 
 ## 📞 联系方式
 
 - **Telegram 交流群**: https://t.me/+ft-zI76oovgwNmRh
-- **GitHub Issues**: [提交问题](https://github.com/byJoey/ech-wk/issues)
+- **GitHub Issues**: [提交问题](https://github.com/jfeng018/ech-wk/issues)
 
 ## 🙏 贡献
 

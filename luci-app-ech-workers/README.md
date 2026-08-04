@@ -1,12 +1,12 @@
 # LuCI App for Tuple ECH Worker
 
-[![GitHub](https://img.shields.io/badge/GitHub-ECH--Workers-blue?logo=github)](https://github.com/byJoey/ech-wk)
+[![GitHub](https://img.shields.io/badge/GitHub-ECH--Workers-blue?logo=github)](https://github.com/jfeng018/ech-wk)
 [![License](https://img.shields.io/badge/License-GPL--3.0-green.svg)](LICENSE)
 [![OpenWrt](https://img.shields.io/badge/OpenWrt-LuCI-blue.svg)](https://openwrt.org/)
 
-OpenWrt LuCI 图形界面配置应用，用于管理 [ECH Workers](https://github.com/byJoey/ech-wk) 代理服务。
+OpenWrt LuCI 图形界面配置应用，用于管理 [ECH Workers](https://github.com/jfeng018/ech-wk) 代理服务。
 
-> 🙏 **致谢**: 本项目源自 [SunshineList/luci-app-ech-workers](https://github.com/SunshineList/luci-app-ech-workers)，现作为 [ech-wk](https://github.com/byJoey/ech-wk) 仓库的一部分维护。
+> 🙏 **致谢**: 本项目源自 [SunshineList/luci-app-ech-workers](https://github.com/SunshineList/luci-app-ech-workers)，现作为 [ech-wk](https://github.com/jfeng018/ech-wk) 仓库的一部分维护。
 
 ---
 
@@ -202,7 +202,7 @@ luci-app-ech-workers/
 
 ## 🔗 相关链接
 
-- **ECH Workers 核心项目**: [byJoey/ech-wk](https://github.com/byJoey/ech-wk)
+- **ECH Workers 核心项目**: [jfeng018/ech-wk](https://github.com/jfeng018/ech-wk)
 - **OpenWrt 官网**: [openwrt.org](https://openwrt.org/)
 - **LuCI 文档**: [LuCI Wiki](https://openwrt.org/docs/guide-developer/luci)
 

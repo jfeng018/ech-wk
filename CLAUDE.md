@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ECH Workers (ech-wk) is a cross-platform proxy client that encrypts the TLS SNI using ECH (Encrypted Client Hello, a TLS 1.3 extension, requires Go 1.23+). It proxies traffic through a Cloudflare Worker and exposes a local SOCKS5 / HTTP CONNECT proxy on a user-configured listening port. The repo is the GitHub-deployed source for the byJoey/ech-wk project, which builds Windows/macOS/Linux desktop and soft-router binaries.
+ECH Workers (ech-wk) is a cross-platform proxy client that encrypts the TLS SNI using ECH (Encrypted Client Hello, a TLS 1.3 extension, requires Go 1.23+). It proxies traffic through a Cloudflare Worker and exposes a local SOCKS5 / HTTP CONNECT proxy on a user-configured listening port. The repo is the GitHub-deployed source for the jfeng018/ech-wk project, which builds Windows/macOS/Linux desktop and soft-router binaries.
 
 The communication pipeline is: **local client (Go)** — WebSocket tunnel — **Cloudflare Worker (`_worker.js`)**, which relays to the target host through Cloudflare's sockets API.
 
